@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml" lang="zh">
+
+<head>
+  <meta charset="UTF-8" />
+  <title>合同书</title>
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Serif+SC&amp;display=swap" rel="stylesheet" />
+  <style>
+    body {
+      font-family: "Noto Serif SC", serif;
+      margin: 40px;
+      line-height: 1.8;
+      color: #000;
+    }
+
+    h1 {
+      text-align: center;
+      font-size: 24px;
+      font-weight: bold;
+      margin: 40px 0 30px;
+    }
+
+    p {
+      margin: 12px 0;
+      font-size: 16px;
+    }
+
+    .section-title {
+      font-weight: bold;
+      font-size: 18px;
+      margin-top: 24px;
+    }
+
+    .info-block {
+      margin-top: 20px;
+    }
+
+    .signature-block {
+      margin-top: 50px;
+    }
+
+    .watermark {
+      position: fixed;
+      top: 50%;
+      left: 50%;
+      font-size: 60px;
+      color: rgba(200, 200, 200, 0.3);
+      transform: translate(-50%, -50%) rotate(-30deg);
+      pointer-events: none;
+      z-index: -1;
+    }
+
+    .page-break {
+      text-align: right;
+    }
+
+    .page-footer {
+      text-align: center;
+      font-size: 14px;
+      color: #888;
+      margin-top: 40px;
+    }
+
+    .flex-row {
+      display: flex;
+      justify-content: space-between;
+    }
+
+    .bold {
+      font-weight: bold;
+    }
+
+    .flex {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    @page {
+      size: A4;
+      margin-top: 100px;
+      margin-bottom: 50px;
+      margin-left: 40px;
+      margin-right: 100px;
+
+      font-family: "Noto Serif SC", serif;
+
+      @top-left {
+        content: "打印时间: {{printTime}}";
+        font-size: 12px;
+        color: #888;
+      }
+
+      @top-right {
+        content: "{{id}}";
+        font-size: 12px;
+        color: #888;
+      }
+
+      @bottom-center {
+        content: "第 " counter(page) " 页 共 " counter(pages) " 页";
+        font-size: 12px;
+        color: #888;
+      }
+    }
+  </style>
+</head>
+
+<body>
+  <img src="http://img.na.com/fuyinwuxiao.png?timestamp=222"
+    style="position: fixed; width: 300px; height: 420px; top: 20%;left: 30%;" />
+
+  <div style="position: relative; z-index: 9999;">
+    <div>
+      <table border="0" style="width: 100%; border-collapse: collapse; margin-bottom: 20px;">
+        <tr>
+          <td style="text-align: left;height: 140px;width: 140px;"><img src="{{securityCode}}" alt=""
+              style="width: 140px;height: 140px;" /></td>
+          <td style="text-align: right; vertical-align: top;">编号：{{id}}</td>
+        </tr>
+      </table>
+    </div>
+
+    <div>
+      <h1>xxxx授权合同</h1>
+
+      <p class="bold">甲方：XXXX有限公司</p>
+      <p>公司地址：xxxxxxx</p>
+      <p>信用代码：xxxxxx</p>
+      <p>电子邮箱：xxxxxx</p>
+      <p>联系电话：xxxxxx</p>
+
+      <p class="bold">乙方：</p>
+      <p>用户ID：{{userIdB}}</p>
+      <p>姓名：{{nameB}}</p>
+      <p>身份证号：<span style="text-decoration: underline;">{{idCardB}} </span></p>
+      <p>订单编号：{{orderId}}</p>
+    </div>
+
+    <div>
+      <p class="bold">依据《中华人民共和国民法典》及相关法律的规定，在甲乙双方互利的原则下，建立合作伙伴关系，达成合作意向，经协商一致，签订本合同，具体内容如下:</p>
+    </div>
+
+    <div>
+      <table border="0" cellspacing="0" cellpadding="12"
+        style="width: 100%; margin-top: 40px; text-align: left; border-collapse: collapse;">
+        <thead>
+          <tr>
+            <th>甲方签字（盖章）</th>
+            <th>乙方签字（手写）</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td style="height: 100px;"><img src="{{signatureA}}" alt="" style="width: 140px;height: 140px;" /></td>
+            <td style="height: 100px;"><img src="{{signatureB}}" alt="" style="width: 100px;height: 50px;" /></td>
+          </tr>
+        </tbody>
+      </table>
+
+      <div class="page-break">
+        <p>日期：{{date}}（以xxx时间为准）</p>
+      </div>
+    </div>
+  </div>
+
+</body>
+
+</html>
