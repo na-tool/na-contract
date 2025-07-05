@@ -6,7 +6,7 @@
     <artifactId>na-contract</artifactId>
     <name>${project.artifactId}</name>
     <groupId>io.github.na-tool</groupId>
-    <version>1.0.1</version>
+    <version>1.0.2</version>
     <packaging>jar</packaging>
     <description>合同模块</description>
 
@@ -95,7 +95,7 @@
         <dependency>
             <groupId>io.github.na-tool</groupId>
             <artifactId>na-common</artifactId>
-            <version>1.0.0</version>
+            <version>1.0.5</version>
             <scope>provided</scope>
         </dependency>
 
