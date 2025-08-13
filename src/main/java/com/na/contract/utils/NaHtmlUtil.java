@@ -84,6 +84,13 @@ public class NaHtmlUtil {
     public Boolean renderHtmlToFile(String htmlTempFilePath,
                                     Map<String, Object> sourceMap,
                                     String targetFilePath) {
+
+        /**
+         * 出问题原因
+         * 1. 检查字体文件是否存在
+         * 2. 检查字体文件大小是否全为14.12M（格式或内容损坏）
+         * 3. 检查模板路径 & 字体路径 权限
+         */
         try {
             // 1. 检查配置对象
             if (naAutoContractConfig == null) {
