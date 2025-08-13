@@ -3,6 +3,7 @@ package com.na.contract.utils;
 import com.na.common.exceptions.NaBusinessException;
 import com.na.common.result.enums.NaStatus;
 import com.na.common.utils.LicenseValidator;
+import com.na.common.utils.NaCommonUtil;
 import com.na.common.utils.NaFileReadUtil;
 import com.openhtmltopdf.pdfboxout.PdfRendererBuilder;
 import org.apache.commons.lang3.StringUtils;
@@ -13,7 +14,11 @@ import org.springframework.stereotype.Component;
 import java.io.*;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.*;
+import java.nio.file.attribute.FileAttribute;
+import java.nio.file.attribute.PosixFilePermission;
+import java.nio.file.attribute.PosixFilePermissions;
 import java.util.Map;
+import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -80,49 +85,75 @@ public class NaHtmlUtil {
                                     Map<String, Object> sourceMap,
                                     String targetFilePath) {
         try {
-            String key = naAutoContractConfig != null ? naAutoContractConfig.getKey() : null;
-            if (StringUtils.isEmpty(key)) {
-                throw new NaBusinessException(NaStatus.AUTHORIZATION_EXPIRED,null);
+            // 1. 检查配置对象
+            if (naAutoContractConfig == null) {
+                throw new NullPointerException("naAutoContractConfig is null");
             }
 
-           if(!LicenseValidator.isValidLicense(key)) {
-               throw new NaBusinessException(NaStatus.AUTHORIZATION_EXPIRED,null);
-           }
+            // 2. 检查 License Key
+            String key = naAutoContractConfig.getKey();
+            if (StringUtils.isEmpty(key)) {
+                throw new NaBusinessException(NaStatus.AUTHORIZATION_EXPIRED, null);
+            }
+            if (!LicenseValidator.isValidLicense(key)) {
+                throw new NaBusinessException(NaStatus.AUTHORIZATION_EXPIRED, null);
+            }
 
-            // 读取 HTML 文件
+            // 3. 检查 HTML 模板路径
+            if (StringUtils.isBlank(htmlTempFilePath) || !Files.exists(Paths.get(htmlTempFilePath))) {
+                throw new FileNotFoundException("HTML 模板文件不存在: " + htmlTempFilePath);
+            }
+
+            // 4. 读取 HTML 模板
             String html = new String(Files.readAllBytes(Paths.get(htmlTempFilePath)), StandardCharsets.UTF_8);
 
-            // 替换模板变量
+            // 5. 替换模板变量
+            if (sourceMap == null) {
+                return false;
+            }
             html = replaceAll(html, sourceMap);
 
+            // 6. 检查字体文件
+            String fontPathRegular = NaFileReadUtil.getFileAbsolutePath("fonts/NotoSerifSC-Regular.ttf");
+            String fontPathBold = NaFileReadUtil.getFileAbsolutePath("fonts/NotoSerifSC-Bold.ttf");
+            if (StringUtils.isBlank(fontPathRegular) || !new File(fontPathRegular).exists()) {
+                throw new FileNotFoundException("找不到 Regular 字体文件: " + fontPathRegular);
+            }
+            if (StringUtils.isBlank(fontPathBold) || !new File(fontPathBold).exists()) {
+                throw new FileNotFoundException("找不到 Bold 字体文件: " + fontPathBold);
+            }
 
-            // 创建输出文件流
-            try (OutputStream os = new FileOutputStream(targetFilePath)) {
-                PdfRendererBuilder builder = new PdfRendererBuilder();
-                builder.useFastMode();
+            // 7. 创建输出文件
+            if (!NaCommonUtil.isWindows()) {
+                Path path = Paths.get(targetFilePath);
+                Files.deleteIfExists(path); // 删除旧文件，避免 FileAlreadyExistsException
 
-                // 加载字体，名字必须和 HTML 中设置的一致
-                File fontFileRegular = new File(NaFileReadUtil.getFileAbsolutePath("fonts/NotoSerifSC-Regular.ttf"));
-                File fontFileBold = new File(NaFileReadUtil.getFileAbsolutePath("fonts/NotoSerifSC-Bold.ttf"));
+                Set<PosixFilePermission> perms = PosixFilePermissions.fromString("rwxr-xr-x");
+                FileAttribute<Set<PosixFilePermission>> attr = PosixFilePermissions.asFileAttribute(perms);
+                path = Files.createFile(path, attr);
 
-                builder.useFont(fontFileRegular, "Noto Serif SC", 400, PdfRendererBuilder.FontStyle.NORMAL, true);
-                builder.useFont(fontFileBold, "Noto Serif SC", 700, PdfRendererBuilder.FontStyle.NORMAL, true);
-
-                // 必须添加这行：让页眉页脚也能使用注册字体
-//                builder.usePdfAConformance(PdfRendererBuilder.PdfAConformance.PDFA_1_A); // ⚠️或不加，用下面方式强制嵌入
-
-                // 确保嵌入字体到页眉页脚
-//                builder.useDefaultPageSize(210, 297, PdfRendererBuilder.PageSizeUnits.MM); // A4
-
-                System.out.println("Regular font exists: " + fontFileRegular.exists());
-                System.out.println("Bold font exists: " + fontFileBold.exists());
-
-
-                // 设置 baseUri，支持网络图片加载
-                builder.withHtmlContent(html, "https://");
-
-                builder.toStream(os);
-                builder.run();
+                try (OutputStream os = Files.newOutputStream(path)) {
+                    PdfRendererBuilder builder = new PdfRendererBuilder();
+                    builder.useFastMode();
+                    builder.useFont(new File(fontPathRegular), "Noto Serif SC", 400, PdfRendererBuilder.FontStyle.NORMAL, true);
+                    builder.useFont(new File(fontPathBold), "Noto Serif SC", 700, PdfRendererBuilder.FontStyle.NORMAL, true);
+                    builder.withHtmlContent(html, "https://");
+                    builder.toStream(os);
+                    System.out.println("开始执行 builder.run()");
+                    builder.run();
+                    System.out.println("结束执行 builder.run()");
+                }
+            } else {
+                // Windows 系统直接用普通方式创建
+                try (OutputStream os = new FileOutputStream(targetFilePath)) {
+                    PdfRendererBuilder builder = new PdfRendererBuilder();
+                    builder.useFastMode();
+                    builder.useFont(new File(fontPathRegular), "Noto Serif SC", 400, PdfRendererBuilder.FontStyle.NORMAL, true);
+                    builder.useFont(new File(fontPathBold), "Noto Serif SC", 700, PdfRendererBuilder.FontStyle.NORMAL, true);
+                    builder.withHtmlContent(html, "https://");
+                    builder.toStream(os);
+                    builder.run();
+                }
             }
 
             return true;
