@@ -4,14 +4,12 @@ import com.na.contract.dto.NaResponse;
 import com.na.contract.dto.NaWordToPdfDTO;
 
 import java.io.*;
-import java.nio.file.Files;
-import java.nio.file.Paths;
 import java.util.Base64;
 
 /**
  * @author pg
  */
-public class WordToPdfUtil {
+public class NaWordToPdfUtil {
     public static NaResponse wordToPdf(NaWordToPdfDTO dto) throws Exception {
         // 1. 拼写 Word 路径
         String wordPath = String.format("/na/contract/temp/%s/%s.docx", "1", "2");
