@@ -7,8 +7,13 @@ import java.io.*;
 import java.nio.file.Files;
 import java.nio.file.Paths;
 import java.util.*;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 public class WordBase64ReplaceUtil {
+
+    // 定义正则常量，编译一次即可重复使用
+    private static final Pattern TABLE_PLACEHOLDER_PATTERN = Pattern.compile("\\$\\{table:([^}]+)}");
 
     /**
      * 替换文本、图片、表格循环
@@ -101,10 +106,13 @@ public class WordBase64ReplaceUtil {
 
         for (XWPFTableCell cell : firstRow.getTableCells()) {
             String cellText = cell.getText();
-            if (cellText != null && cellText.contains("${table:")) {
-                isLoop = true;
-                tableName = cellText.substring(cellText.indexOf("${table:") + 8, cellText.indexOf("}"));
-                break;
+            if (cellText != null) {
+                Matcher matcher = TABLE_PLACEHOLDER_PATTERN.matcher(cellText);
+                if (matcher.find()) {
+                    tableName = matcher.group(1); // 获取 table 名称
+                    isLoop = true;
+                    break;
+                }
             }
         }
 
@@ -130,6 +138,54 @@ public class WordBase64ReplaceUtil {
                 }
                 // 移除模板行
                 table.removeRow(1);
+//                // ✅ 清空第一行标识，清理模板行中的循环占位符，但保留其他文字
+//                for (XWPFTableCell cell : firstRow.getTableCells()) {
+//                    String cellText = cell.getText();
+//                    if (cellText != null && cellText.contains("${table:")) {
+//                        // 只替换占位符为空，保留其他文字
+//                        for (int i = 0; i < cell.getParagraphs().size(); i++) {
+//                            XWPFParagraph paragraph = cell.getParagraphs().get(i);
+//                            for (XWPFRun run : paragraph.getRuns()) {
+//                                String text = run.getText(0);
+//                                if (text != null && text.contains("${table:")) {
+//                                    text = text.replaceAll("\\$\\{table:[^}]+}", ""); // 只删除占位符
+//                                    run.setText(text, 0);
+//                                }
+//                            }
+//                        }
+//                    }
+//                }
+                // 清空第一行中的循环占位符，保留其他文字
+                for (XWPFTableCell cell : firstRow.getTableCells()) {
+
+                    for (XWPFParagraph paragraph : cell.getParagraphs()) {
+
+                        List<XWPFRun> runs = paragraph.getRuns();
+                        if (runs == null || runs.isEmpty()) {continue;}
+
+                        // 将 run 文本合并
+                        StringBuilder sb = new StringBuilder();
+                        for (XWPFRun run : runs) {
+                            String t = run.getText(0);
+                            sb.append(t == null ? "" : t);
+                        }
+
+                        // 替换占位符
+                        String merged = sb.toString();
+                        String cleaned = merged.replaceAll("\\$\\{table:[^}]+}", "");
+
+                        // 如果替换前后相同，说明这段没有占位符，跳过
+                        if (merged.equals(cleaned)) {continue;}
+
+                        // 清空原 runs 并写入处理后的文本（一个 run 即可）
+                        for (XWPFRun run : runs) {
+                            run.setText("", 0);
+                        }
+
+                        XWPFRun newRun = paragraph.createRun();
+                        newRun.setText(cleaned);
+                    }
+                }
             }
         } else {
             // 普通表格文本替换
@@ -178,6 +234,22 @@ public class WordBase64ReplaceUtil {
 
         Map<String, List<Map<String, Object>>> tableParams = new HashMap<>();
         tableParams.put("orderTable", orderList);
+
+
+        List<Map<String, Object>> orderList2 = new ArrayList<>();
+        Map<String, Object> row12 = new HashMap<>();
+        row12.put("item", "产品A2");
+        row12.put("price", "100");
+        row12.put("qty", "2");
+        orderList2.add(row12);
+
+        Map<String, Object> row22 = new HashMap<>();
+        row22.put("item", "产品B2");
+        row22.put("price", "200");
+        row22.put("qty", "1");
+        orderList2.add(row22);
+
+        tableParams.put("orderTable2", orderList2);
 
         String path = "D:\\tt.docx";
         byte[] fileBytes = Files.readAllBytes(Paths.get(path));
