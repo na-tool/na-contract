@@ -32,7 +32,7 @@ import java.util.regex.Pattern;
  */
 public class WordBase64ReplaceUtil {
 
-    // 表格占位符正则，匹配 ${table:xxx}，xxx 捕获为 group(1)
+    // 表格循环占位符，例如：${table:orderTable}
     private static final Pattern TABLE_PLACEHOLDER_PATTERN = Pattern.compile("\\$\\{table:([^}]+)}");
     // 文本/图片占位符正则（用于段落级别按 key 替换时可选）
     private static final Pattern PLACEHOLDER_PATTERN = Pattern.compile("\\$\\{([^}]+)}");
@@ -58,32 +58,38 @@ public class WordBase64ReplaceUtil {
             throw new IllegalArgumentException("模板 Base64 不能为空");
         }
 
-        // null -> empty maps 保证后续无需判空
+        // 避免空指针
         textParams = textParams == null ? Collections.emptyMap() : textParams;
         imageParams = imageParams == null ? Collections.emptyMap() : imageParams;
         tableParams = tableParams == null ? Collections.emptyMap() : tableParams;
 
-        byte[] wordBytes = Base64.getDecoder().decode(templateBase64);
-        try (XWPFDocument doc = new XWPFDocument(new ByteArrayInputStream(wordBytes))) {
+        byte[] bytes = Base64.getDecoder().decode(templateBase64);
 
-            // 1) 段落级文本/图片替换（文档自由段落）
+        try (XWPFDocument doc = new XWPFDocument(new ByteArrayInputStream(bytes))) {
+
+            // -----------------------
+            // 1. 处理文档自由段落
+            // -----------------------
             for (XWPFParagraph p : doc.getParagraphs()) {
                 replaceParagraphTextAndImages(p, textParams, imageParams);
             }
 
-            // 2) 表格处理（包括表格中的段落）
-            //    注意：表格里既可能包含普通占位符，也可能包含循环表格占位符
+            // -----------------------
+            // 2. 处理所有表格
+            // -----------------------
             for (XWPFTable table : doc.getTables()) {
                 processTable(table, textParams, imageParams, tableParams);
             }
 
-            // 3) 输出 Base64
-            try (ByteArrayOutputStream baos = new ByteArrayOutputStream()) {
-                doc.write(baos);
-                return Base64.getEncoder().encodeToString(baos.toByteArray());
-            }
+            // -----------------------
+            // 3. 输出 Base64
+            // -----------------------
+            ByteArrayOutputStream baos = new ByteArrayOutputStream();
+            doc.write(baos);
+            return Base64.getEncoder().encodeToString(baos.toByteArray());
         }
     }
+
 
     // ---------------------------
     // 段落替换（文本 + 图片）
@@ -96,7 +102,7 @@ public class WordBase64ReplaceUtil {
         List<XWPFRun> runs = paragraph.getRuns();
         if (runs == null || runs.isEmpty()) {return;}
 
-        // 合并所有 run 文本，以便支持跨 run 的占位符
+        // 合并所有 run 文本（解决占位符被拆成多个 run 的情况）
         StringBuilder sb = new StringBuilder();
         for (XWPFRun run : runs) {
             String t = run.getText(0);
@@ -108,99 +114,105 @@ public class WordBase64ReplaceUtil {
         String replaced = merged;
         for (Map.Entry<String, Object> entry : textParams.entrySet()) {
             String key = "${" + entry.getKey() + "}";
-            String value = entry.getValue() == null ? "" : entry.getValue().toString();
-            if (replaced.contains(key)) {
-                replaced = replaced.replace(key, value);
-            }
+            replaced = replaced.replace(key, entry.getValue() == null ? "" : entry.getValue().toString());
         }
 
         // 替换图片占位符（如果存在），注意：此处只支持替换为单张图片并写入对应位置
         // 图片占位符必须以 ${imgKey} 形式存在
-        boolean hadImage = false;
-        for (Map.Entry<String, InputStream> imgEntry : imageParams.entrySet()) {
-            String key = "${" + imgEntry.getKey() + "}";
-            if (replaced.contains(key)) {
+        boolean hasImage = false;
+        for (Map.Entry<String, InputStream> entry : imageParams.entrySet()) {
+            String imgKey = "${" + entry.getKey() + "}";
+            if (replaced.contains(imgKey)) {
                 // 将该占位符删除（用空字符串），然后在该段落末尾插入图片（或你可以改为在占位处插入）
-                replaced = replaced.replace(key, "");
-                hadImage = true;
+                hasImage = true;
+                replaced = replaced.replace(imgKey, ""); // 删除图片占位符
 
                 // 清空原 runs 并写回文本（先清空，再写）
-                clearRunsAndSetText(paragraph, replaced);
+                clearRuns(paragraph);
+                XWPFRun textRun = paragraph.createRun();
+                textRun.setText(replaced);
 
                 // 在段落末尾插入图片（宽高为 150x150，可按需调整或做参数）
-                XWPFRun imageRun = paragraph.createRun();
-                try (InputStream in = imgEntry.getValue()) {
-                    if (in != null) {
-                        // 默认当 PNG 处理；如果你需要根据图片类型动态设置，需传入额外信息
-                        imageRun.addPicture(in, XWPFDocument.PICTURE_TYPE_PNG, imgEntry.getKey(),
-                                Units.toEMU(150), Units.toEMU(150));
-                    }
+                XWPFRun imgRun = paragraph.createRun();
+                try (InputStream in = entry.getValue()) {
+                    // 默认当 PNG 处理；如果你需要根据图片类型动态设置，需传入额外信息
+                    imgRun.addPicture(in, XWPFDocument.PICTURE_TYPE_PNG, entry.getKey(),
+                            Units.toEMU(150), Units.toEMU(150));
                 }
-                // 可能存在多个图片占位符，继续循环处理
             }
         }
 
-        if (!hadImage) {
-            // 若没有图片替换，直接将替换后的文本写回（统一为单 run，避免 run 拆分问题）
-            clearRunsAndSetText(paragraph, replaced);
+        // 若没有图片替换，直接将替换后的文本写回（统一为单 run，避免 run 拆分问题）
+        if (!hasImage) {
+            clearRuns(paragraph);
+            XWPFRun r = paragraph.createRun();
+            r.setText(replaced);
         }
     }
+
 
     /**
      * 清除段落所有 run 的文本内容，并将 newText 写回为单个 run（保留样式不可行时会丢失样式）
      * 如果需要保留样式，需要逐 run 复制样式，这里为了健壮性采用简单写法。
      */
-    private static void clearRunsAndSetText(XWPFParagraph paragraph, String newText) {
-        List<XWPFRun> runs = paragraph.getRuns();
-        if (runs != null) {
-            // 清空原 runs 文本
-            for (XWPFRun r : runs) {
-                r.setText("", 0);
-            }
+    private static void clearRuns(XWPFParagraph p) {
+        if (p.getRuns() == null) {return;}
+        for (XWPFRun r : p.getRuns()) {
+            r.setText("", 0);
         }
-        // 写入新文本为一个 run
-        XWPFRun newRun = paragraph.createRun();
-        newRun.setText(newText == null ? "" : newText);
     }
 
-    // ---------------------------
-    // 表格处理：支持任意行上的 ${table:xxx} 标识
-    // ---------------------------
-    private static void processTable(XWPFTable table,
-                                     Map<String, Object> textParams,
-                                     Map<String, InputStream> imageParams,
-                                     Map<String, List<Map<String, Object>>> tableParams) throws Exception {
-        if (table == null) {return;}
 
-        // 1) 搜索表格中第一个包含 ${table:xxx} 的单元格（支持任意行/列）
-        int rows = table.getRows().size();
-        for (int r = 0; r < rows; r++) {
+
+
+    // ============================================================================================
+    //   表格处理（表格循环 + 非循环区域的普通变量替换）
+    // ============================================================================================
+    private static void processTable(
+            XWPFTable table,
+            Map<String, Object> textParams,
+            Map<String, InputStream> imageParams,
+            Map<String, List<Map<String, Object>>> tableParams
+    ) throws Exception {
+
+        if (table == null){ return;}
+
+        int rowCount = table.getRows().size();
+
+        for (int r = 0; r < rowCount; r++) {
+
             XWPFTableRow row = table.getRow(r);
             if (row == null) {continue;}
 
-            boolean found = false;
+            boolean foundTableFlag = false;
             String tableName = null;
 
+            // -------------------------------
+            // ⭐ 扫描每个单元格：
+            //   ① 替换普通变量（关键修复点！）
+            //   ② 查找 ${table:xxx}
+            // -------------------------------
             for (XWPFTableCell cell : row.getTableCells()) {
-                if (cell == null) {continue;}
-                String cellText = cell.getText();
-                if (cellText == null) {continue;}
 
-                Matcher matcher = TABLE_PLACEHOLDER_PATTERN.matcher(cellText);
-                if (matcher.find()) {
-                    tableName = matcher.group(1);
-                    found = true;
+                replaceTextInTableCell(cell, textParams);  // ⭐ 修复点：普通变量替换
+
+                String text = cell.getText();
+                if (text == null) {continue;}
+
+                Matcher m = TABLE_PLACEHOLDER_PATTERN.matcher(text);
+                if (m.find()) {
+                    tableName = m.group(1);
+                    foundTableFlag = true;
                     break;
                 }
             }
 
-            if (!found) {
-                // 未在该行找到标识，处理下一行
-                continue;
-            }
+            if (!foundTableFlag) {continue;}
 
-            // 找到占位符所在行 —— r
-            // 模板行约定为：标识行的下一行（r+1）
+            // -------------------------------
+            // 找到 ${table:xxx} 所在行 r
+            // 下一行 (r+1) 作为模板行
+            // -------------------------------
             int templateRowIndex = r + 1;
             if (templateRowIndex >= table.getRows().size()) {
                 // 没有模板行，清理占位符后继续
@@ -208,75 +220,74 @@ public class WordBase64ReplaceUtil {
                 continue;
             }
 
-            // 从 tableParams 获取数据列表
-            if (!tableParams.containsKey(tableName)) {
+            XWPFTableRow templateRow = table.getRow(templateRowIndex);
+
+            // 获取循环数据
+            List<Map<String, Object>> dataList = tableParams.get(tableName);
+
+            // 无数据时，只清理占位符
+            if (dataList == null || dataList.isEmpty()) {
                 // 没有数据也要清理标识（只删除 ${table:xxx}，保留其他文字）
                 cleanPlaceholderInRow(row);
                 // 不删除模板行（保留模板）
                 continue;
             }
 
-            List<Map<String, Object>> dataList = tableParams.get(tableName);
-            if (dataList == null || dataList.isEmpty()) {
-                // 清理标识并保留模板行
-                cleanPlaceholderInRow(row);
-                continue;
-            }
-
-            // 获取模板行
-            XWPFTableRow templateRow = table.getRow(templateRowIndex);
-            // 插入数据行：从 templateRowIndex 开始插入（插入位置每次都是 templateRowIndex，插入后原 templateRow 向下移）
+            // -------------------------------
+            // 插入数据行
+            // -------------------------------
             for (int i = 0; i < dataList.size(); i++) {
-                Map<String, Object> rowData = dataList.get(i);
                 // 在 templateRowIndex 处插入新行
-                XWPFTableRow createdRow = table.insertNewTableRow(templateRowIndex + i);
+                XWPFTableRow newRow = table.insertNewTableRow(templateRowIndex + i);
                 // 为了简单稳健，这里按模板单元格数量创建新单元格并填文本（不复制单元格样式）
                 int cellCount = templateRow.getTableCells().size();
+                Map<String, Object> rowData = dataList.get(i);
+
                 for (int c = 0; c < cellCount; c++) {
+
                     XWPFTableCell srcCell = templateRow.getCell(c);
-                    XWPFTableCell dstCell = createdRow.addNewTableCell();
-
+                    XWPFTableCell dstCell = newRow.addNewTableCell();
                     // 获取模板单元格的完整文本（可能包含 ${col}）
-                    String templateText = srcCell.getText();
-                    templateText = templateText == null ? "" : templateText;
+                    String txt = srcCell.getText();
+                    txt = txt == null ? "" : txt;
 
-                    // 先用表格级的占位符（rowData）替换
+                    // 表格级变量替换
                     for (Map.Entry<String, Object> e : rowData.entrySet()) {
-                        String key = "${" + e.getKey() + "}";
-                        String value = e.getValue() == null ? "" : e.getValue().toString();
-                        templateText = templateText.replace(key, value);
+                        txt = txt.replace("${" + e.getKey() + "}",
+                                e.getValue() == null ? "" : e.getValue().toString());
                     }
 
-                    // 然后用全局 textParams 做二次替换（如果模板单元格中也可能使用全局变量）
-                    for (Map.Entry<String, Object> globalEntry : textParams.entrySet()) {
-                        String gk = "${" + globalEntry.getKey() + "}";
-                        String gv = globalEntry.getValue() == null ? "" : globalEntry.getValue().toString();
-                        if (templateText.contains(gk)) {
-                            templateText = templateText.replace(gk, gv);
-                        }
+                    // 全局变量替换（如 ${taskTotal}）
+                    for (Map.Entry<String, Object> e : textParams.entrySet()) {
+                        txt = txt.replace("${" + e.getKey() + "}",
+                                e.getValue() == null ? "" : e.getValue().toString());
                     }
 
-                    // 写入目标单元格（写为单段落单 run）
-                    dstCell.removeParagraph(0); // 移除默认段落
+                    // 写入，然后用全局 textParams 做二次替换（如果模板单元格中也可能使用全局变量）
+                    dstCell.removeParagraph(0);
                     XWPFParagraph p = dstCell.addParagraph();
                     XWPFRun run = p.createRun();
-                    run.setText(templateText);
+                    run.setText(txt);
+
+                    // 再执行一次完整段落替换（保留兼容性）
+                    replaceParagraphTextAndImages(p, textParams, imageParams);
                 }
             }
 
-            // 删除模板行（原 templateRow 向下移动到 templateRowIndex + dataList.size()，所以删除 templateRowIndex + dataList.size()）
+            // 删除模板行
             table.removeRow(templateRowIndex + dataList.size());
 
-            // 清理标识行（只删除 ${table:xxx}，保留其他文字）
+            // 清理 ${table:xxx}
             cleanPlaceholderInRow(row);
 
-            // 处理完当前表格的一个循环后直接返回（假设一个表格只处理第一个匹配的循环）
             return;
         }
 
-        // 如果遍历完没有找到任何 ${table:xxx}，则把表格当成普通表格处理（替换其中的文本/图片占位）
-        for (XWPFTableRow row : table.getRows()) {
-            for (XWPFTableCell cell : row.getTableCells()) {
+        // -------------------------------
+        // 表格没有循环占位符 → 普通表格
+        // -------------------------------
+        for (XWPFTableRow r : table.getRows()) {
+            for (XWPFTableCell cell : r.getTableCells()) {
                 for (XWPFParagraph p : cell.getParagraphs()) {
                     replaceParagraphTextAndImages(p, textParams, imageParams);
                 }
@@ -284,61 +295,79 @@ public class WordBase64ReplaceUtil {
         }
     }
 
+
+
     /**
-     * 清理行中所有段落的 ${table:xxx} 占位符（保留行内其它文字）
-     * 处理方法：合并段落所有 run 文本 -> replace -> 清空原 runs -> 写入新单 run
+     * 删除表格行中的所有 ${table:xxx} 占位符，保留其他文字
      */
     private static void cleanPlaceholderInRow(XWPFTableRow row) {
         if (row == null) {return;}
 
         for (XWPFTableCell cell : row.getTableCells()) {
-            for (XWPFParagraph paragraph : cell.getParagraphs()) {
-                List<XWPFRun> runs = paragraph.getRuns();
+            for (XWPFParagraph p : cell.getParagraphs()) {
+
+                List<XWPFRun> runs = p.getRuns();
                 if (runs == null || runs.isEmpty()) {continue;}
 
-                // 合并原文本
                 StringBuilder sb = new StringBuilder();
-                for (XWPFRun run : runs) {
-                    String t = run.getText(0);
-                    sb.append(t == null ? "" : t);
+                for (XWPFRun r : runs) {
+                    sb.append(r.getText(0) == null ? "" : r.getText(0));
                 }
-                String merged = sb.toString();
 
-                // 删除占位符 ${table:xxx}
+                String merged = sb.toString();
                 String cleaned = merged.replaceAll("\\$\\{table:[^}]+}", "");
 
-                // 如果相同，则不改写
-                if (Objects.equals(merged, cleaned)) {continue;}
-
-                // 清空原 runs
-                for (XWPFRun run : runs) {run.setText("", 0);}
-
-                // 写回清理后的文本（单 run）
-                XWPFRun newRun = paragraph.createRun();
-                newRun.setText(cleaned);
+                if (!cleaned.equals(merged)) {
+                    clearRuns(p);
+                    XWPFRun nr = p.createRun();
+                    nr.setText(cleaned);
+                }
             }
         }
     }
 
-    // ---------------------------
-    // Helper：把 HTTP/HTTPS 图像转为 InputStream 的示例（供调用方直接使用）
-    // ---------------------------
+
+
     /**
-     * 从 URL（http/https）读取图片为 InputStream。调用者负责关闭返回的 InputStream。
-     * 示例：
-     *   try (InputStream in = downloadImage("https://...")) {
-     *       imageParams.put("signature", in);
-     *       fillTemplate(...);
-     *   }
+     * ⭐ 新增：表格单元格内的文本变量替换（不含图片）
+     * 解决 `${taskTotal}` 不在段落层、而在表格层不被替换的问题
      */
-    public static InputStream downloadImage(String imageUrl) throws IOException {
-        URL u = new URL(imageUrl);
-        return u.openStream();
+    private static void replaceTextInTableCell(XWPFTableCell cell, Map<String, Object> textParams) {
+
+        for (XWPFParagraph p : cell.getParagraphs()) {
+
+            List<XWPFRun> runs = p.getRuns();
+            if (runs == null || runs.isEmpty()) {continue;}
+
+            // 合并文本
+            StringBuilder sb = new StringBuilder();
+            for (XWPFRun r : runs) {sb.append(r.getText(0) == null ? "" : r.getText(0));}
+            String merged = sb.toString();
+
+            // 替换
+            String replaced = merged;
+            for (Map.Entry<String, Object> e : textParams.entrySet()) {
+                replaced = replaced.replace("${" + e.getKey() + "}",
+                        e.getValue() == null ? "" : e.getValue().toString());
+            }
+
+            if (!merged.equals(replaced)) {
+                clearRuns(p);
+                XWPFRun nr = p.createRun();
+                nr.setText(replaced);
+            }
+        }
     }
 
-    // ---------------------------
-    // Base64 辅助方法（对外）
-    // ---------------------------
+
+
+    // ============================================================================================
+    // 图片下载（供调用者使用）
+    // ============================================================================================
+    public static InputStream downloadImage(String url) throws IOException {
+        return new URL(url).openStream();
+    }
+
     public static InputStream base64ToInputStream(String base64) {
         return new ByteArrayInputStream(Base64.getDecoder().decode(base64));
     }
