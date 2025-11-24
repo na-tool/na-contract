@@ -14,5 +14,6 @@ import lombok.NoArgsConstructor;
 @Builder
 public class NaWordToPdfDTO {
     private String base64;
+    private String absPath;
 
 }
