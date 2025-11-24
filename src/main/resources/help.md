@@ -63,6 +63,16 @@ public void test(){
 }
 ```
 
+```text   
+安装文档 Alibaba Cloud Linux 3.2104 LTS 64位
+
+tar -xvf LibreOffice_25.8.3_Linux_x86-64_rpm.tar.gz 
+
+Sudo rpm -Uvh *.rpm
+
+sudo dnf install -y libXinerama
+```
+
 
 # 【注意】启动类配置
 ```

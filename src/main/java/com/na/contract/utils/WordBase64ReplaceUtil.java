@@ -90,10 +90,10 @@ public class WordBase64ReplaceUtil {
     private static void replaceParagraphTextAndImages(XWPFParagraph paragraph,
                                                       Map<String, Object> textParams,
                                                       Map<String, InputStream> imageParams) throws Exception {
-        if (paragraph == null) return;
+        if (paragraph == null) {return;}
 
         List<XWPFRun> runs = paragraph.getRuns();
-        if (runs == null || runs.isEmpty()) return;
+        if (runs == null || runs.isEmpty()) {return;}
 
         // 合并所有 run 文本，以便支持跨 run 的占位符
         StringBuilder sb = new StringBuilder();
@@ -169,21 +169,21 @@ public class WordBase64ReplaceUtil {
                                      Map<String, Object> textParams,
                                      Map<String, InputStream> imageParams,
                                      Map<String, List<Map<String, Object>>> tableParams) throws Exception {
-        if (table == null) return;
+        if (table == null) {return;}
 
         // 1) 搜索表格中第一个包含 ${table:xxx} 的单元格（支持任意行/列）
         int rows = table.getRows().size();
         for (int r = 0; r < rows; r++) {
             XWPFTableRow row = table.getRow(r);
-            if (row == null) continue;
+            if (row == null) {continue;}
 
             boolean found = false;
             String tableName = null;
 
             for (XWPFTableCell cell : row.getTableCells()) {
-                if (cell == null) continue;
+                if (cell == null) {continue;}
                 String cellText = cell.getText();
-                if (cellText == null) continue;
+                if (cellText == null) {continue;}
 
                 Matcher matcher = TABLE_PLACEHOLDER_PATTERN.matcher(cellText);
                 if (matcher.find()) {
@@ -288,12 +288,12 @@ public class WordBase64ReplaceUtil {
      * 处理方法：合并段落所有 run 文本 -> replace -> 清空原 runs -> 写入新单 run
      */
     private static void cleanPlaceholderInRow(XWPFTableRow row) {
-        if (row == null) return;
+        if (row == null) {return;}
 
         for (XWPFTableCell cell : row.getTableCells()) {
             for (XWPFParagraph paragraph : cell.getParagraphs()) {
                 List<XWPFRun> runs = paragraph.getRuns();
-                if (runs == null || runs.isEmpty()) continue;
+                if (runs == null || runs.isEmpty()) {continue;}
 
                 // 合并原文本
                 StringBuilder sb = new StringBuilder();
@@ -307,10 +307,10 @@ public class WordBase64ReplaceUtil {
                 String cleaned = merged.replaceAll("\\$\\{table:[^}]+}", "");
 
                 // 如果相同，则不改写
-                if (Objects.equals(merged, cleaned)) continue;
+                if (Objects.equals(merged, cleaned)) {continue;}
 
                 // 清空原 runs
-                for (XWPFRun run : runs) run.setText("", 0);
+                for (XWPFRun run : runs) {run.setText("", 0);}
 
                 // 写回清理后的文本（单 run）
                 XWPFRun newRun = paragraph.createRun();
