@@ -41,10 +41,11 @@ public class WordBase64ReplaceUtil {
      * 将 Base64 的 Word 文档进行占位符替换，返回替换后的 Base64 Word
      *
      * @param templateBase64 Word 模板 Base64，不可为空
-     * @param textParams     文本占位符 Map<key, value>，可为 null
-     * @param imageParams    图片占位符 Map<imgKey, InputStream>，可为 null（InputStream 由调用方管理关闭）
-     * @param tableParams    表格循环 Map<tableName, List<Map<列名, 值>>>，可为 null
+     * @param textParams     文本占位符  {@code Map<key, value>}，可为 null
+     * @param imageParams    图片占位符 {@code Map<imgKey, InputStream>}，可为 null（InputStream 由调用方管理关闭）
+     * @param tableParams    表格循环 {@code Map<tableName, List<Map<列名, 值>>>}，可为 null
      * @return 替换后的 Word 的 Base64 字符串
+     * @throws Exception 转换失败异常
      */
     public static String fillTemplate(
             String templateBase64,

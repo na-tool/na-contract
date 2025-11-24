@@ -31,6 +31,8 @@ public class NaWordToPdfUtil {
      *
      * @param dto 输入数据对象，包含 Base64 内容
      * @return NaResponse 返回 Base64 PDF
+     *
+     * @throws Exception 转换失败异常
      */
     public static NaResponse wordToPdf(NaWordToPdfDTO dto) throws Exception {
         // 1. 拼写临时 Word 路径
