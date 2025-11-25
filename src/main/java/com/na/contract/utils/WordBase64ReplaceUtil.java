@@ -92,61 +92,72 @@ public class WordBase64ReplaceUtil {
 
 
     // ---------------------------
-    // 段落替换（文本 + 图片）
-    // ---------------------------
+// 段落替换（文本 + 图片，支持多 run 和换行）
+// ---------------------------
     private static void replaceParagraphTextAndImages(XWPFParagraph paragraph,
                                                       Map<String, Object> textParams,
                                                       Map<String, InputStream> imageParams) throws Exception {
-        if (paragraph == null) {return;}
+        if (paragraph == null || paragraph.getRuns() == null) {return;}
 
-        List<XWPFRun> runs = paragraph.getRuns();
-        if (runs == null || runs.isEmpty()) {return;}
-
-        // 合并所有 run 文本（解决占位符被拆成多个 run 的情况）
-        StringBuilder sb = new StringBuilder();
-        for (XWPFRun run : runs) {
-            String t = run.getText(0);
-            sb.append(t == null ? "" : t);
+        // 1. 合并段落所有 run 文本
+        StringBuilder merged = new StringBuilder();
+        for (XWPFRun r : paragraph.getRuns()) {
+            merged.append(r.getText(0) == null ? "" : r.getText(0));
         }
-        String merged = sb.toString();
 
-        // 替换文本占位符 ${key} -> value（value 为 null 则替换为空字符串）
-        String replaced = merged;
+        String text = merged.toString();
+
+        // 2. 替换文本占位符
         for (Map.Entry<String, Object> entry : textParams.entrySet()) {
             String key = "${" + entry.getKey() + "}";
-            replaced = replaced.replace(key, entry.getValue() == null ? "" : entry.getValue().toString());
-        }
-
-        // 替换图片占位符（如果存在），注意：此处只支持替换为单张图片并写入对应位置
-        // 图片占位符必须以 ${imgKey} 形式存在
-        boolean hasImage = false;
-        for (Map.Entry<String, InputStream> entry : imageParams.entrySet()) {
-            String imgKey = "${" + entry.getKey() + "}";
-            if (replaced.contains(imgKey)) {
-                // 将该占位符删除（用空字符串），然后在该段落末尾插入图片（或你可以改为在占位处插入）
-                hasImage = true;
-                replaced = replaced.replace(imgKey, ""); // 删除图片占位符
-
-                // 清空原 runs 并写回文本（先清空，再写）
-                clearRuns(paragraph);
-                XWPFRun textRun = paragraph.createRun();
-                textRun.setText(replaced);
-
-                // 在段落末尾插入图片（宽高为 150x150，可按需调整或做参数）
-                XWPFRun imgRun = paragraph.createRun();
-                try (InputStream in = entry.getValue()) {
-                    // 默认当 PNG 处理；如果你需要根据图片类型动态设置，需传入额外信息
-                    imgRun.addPicture(in, XWPFDocument.PICTURE_TYPE_PNG, entry.getKey(),
-                            Units.toEMU(150), Units.toEMU(150));
-                }
+            if (text.contains(key)) {
+                Object value = entry.getValue();
+                text = text.replace(key, value == null ? "" : value.toString());
             }
         }
 
-        // 若没有图片替换，直接将替换后的文本写回（统一为单 run，避免 run 拆分问题）
-        if (!hasImage) {
-            clearRuns(paragraph);
-            XWPFRun r = paragraph.createRun();
-            r.setText(replaced);
+        // 3. 替换图片占位符
+        for (Map.Entry<String, InputStream> entry : imageParams.entrySet()) {
+            String imgKey = "${" + entry.getKey() + "}";
+            if (text.contains(imgKey)) {
+                String[] parts = text.split(Pattern.quote(imgKey), -1);
+
+                // 占位符前文本
+                clearRuns(paragraph);
+                XWPFRun beforeRun = paragraph.createRun();
+                insertTextWithLineBreaks(beforeRun, parts[0]);
+
+                // 图片
+                XWPFRun imgRun = paragraph.createRun();
+                try (InputStream in = entry.getValue()) {
+                    imgRun.addPicture(in, XWPFDocument.PICTURE_TYPE_PNG, entry.getKey(),
+                            Units.toEMU(150), Units.toEMU(150));
+                }
+
+                // 占位符后文本
+                if (parts.length > 1 && !parts[1].isEmpty()) {
+                    XWPFRun afterRun = paragraph.createRun();
+                    insertTextWithLineBreaks(afterRun, parts[1]);
+                }
+
+                return; // 图片处理后退出
+            }
+        }
+
+        // 4. 写回文本（支持换行）
+        clearRuns(paragraph);
+        XWPFRun run = paragraph.createRun();
+        insertTextWithLineBreaks(run, text);
+    }
+
+    /**
+     * 将文本中的 \n 转为 Word 换行
+     */
+    private static void insertTextWithLineBreaks(XWPFRun run, String text) {
+        String[] lines = text.split("\\n", -1);
+        for (int i = 0; i < lines.length; i++) {
+            if (i > 0) {run.addBreak();}
+            run.setText(lines[i], i == 0 ? 0 : -1);
         }
     }
 
