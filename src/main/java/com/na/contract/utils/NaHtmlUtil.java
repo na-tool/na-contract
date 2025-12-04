@@ -2,7 +2,6 @@ package com.na.contract.utils;
 
 import com.na.common.exceptions.NaBusinessException;
 import com.na.common.result.enums.NaStatus;
-import com.na.common.utils.LicenseValidator;
 import com.na.common.utils.NaCommonUtil;
 import com.na.common.utils.NaFileReadUtil;
 import com.openhtmltopdf.pdfboxout.PdfRendererBuilder;
@@ -25,8 +24,8 @@ import java.util.regex.Pattern;
 @Component
 public class NaHtmlUtil {
 
-    @Autowired
-    private NaAutoContractConfig naAutoContractConfig;
+//    @Autowired
+//    private NaAutoContractConfig naAutoContractConfig;
 
 
     /**
@@ -93,18 +92,9 @@ public class NaHtmlUtil {
          */
         try {
             // 1. 检查配置对象
-            if (naAutoContractConfig == null) {
-                throw new NullPointerException("naAutoContractConfig is null");
-            }
-
-            // 2. 检查 License Key
-            String key = naAutoContractConfig.getKey();
-            if (StringUtils.isEmpty(key)) {
-                throw new NaBusinessException(NaStatus.AUTHORIZATION_EXPIRED, null);
-            }
-            if (!LicenseValidator.isValidLicense(key)) {
-                throw new NaBusinessException(NaStatus.AUTHORIZATION_EXPIRED, null);
-            }
+//            if (naAutoContractConfig == null) {
+//                throw new NullPointerException("naAutoContractConfig is null");
+//            }
 
             // 3. 检查 HTML 模板路径
             if (StringUtils.isBlank(htmlTempFilePath) || !Files.exists(Paths.get(htmlTempFilePath))) {
