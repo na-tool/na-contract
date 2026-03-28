@@ -6,6 +6,9 @@ import org.springframework.core.io.ClassPathResource;
 
 import com.deepoove.poi.XWPFTemplate;
 import org.springframework.core.io.ClassPathResource;
+import org.springframework.core.io.FileSystemResource;
+import org.springframework.core.io.Resource;
+import org.springframework.util.StringUtils;
 
 import java.io.File;
 import java.io.FileOutputStream;
@@ -32,7 +35,15 @@ public class NaDocx4jUtil {
         }
 
         // 读取模板
-        ClassPathResource resource = new ClassPathResource(templateName);
+        // 自动判断：绝对路径 → FileSystemResource，否则 → ClassPathResource
+        Resource resource;
+        if (StringUtils.hasText(templateName) && new File(templateName).isAbsolute()) {
+            // 绝对路径（Windows 任意盘符 C:/ D:/ E:/ 、Linux /xxx 、Mac /xxx）
+            resource = new FileSystemResource(templateName);
+        } else {
+            // 项目内 resources 下的相对路径
+            resource = new ClassPathResource(templateName);
+        }
 
         try (InputStream inputStream = resource.getInputStream();
              XWPFTemplate template = XWPFTemplate.compile(inputStream).render(data);
