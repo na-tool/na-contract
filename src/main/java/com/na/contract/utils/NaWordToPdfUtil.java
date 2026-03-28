@@ -5,6 +5,7 @@ import com.na.common.utils.NaIDUtil;
 import com.na.contract.dto.NaResponse;
 import com.na.contract.dto.NaWordToPdfDTO;
 import org.apache.commons.lang3.StringUtils;
+import org.springframework.web.multipart.MultipartFile;
 
 import java.io.*;
 import java.nio.file.Files;
@@ -18,67 +19,43 @@ import java.util.Base64;
  */
 public class NaWordToPdfUtil {
 
-    /** LibreOffice 可执行路径 */
-    private static final String WIN_LIBREOFFICE_PATH = "C:\\Program Files\\LibreOffice\\program\\soffice.exe";
-    private static final String LINUX_LIBREOFFICE_PATH = "/opt/libreoffice25.8/program/soffice";
-
-    /** 临时目录根路径 */
-    private static final String WIN_TEMP_DIR = "C:\\na\\contract\\temp";
-    private static final String LINUX_TEMP_DIR = "/na/contract/temp";
-
-    /**
-     * 将 Word 文件（Base64）转换为 PDF（Base64）
-     *
-     * @param dto 输入数据对象，包含 Base64 内容
-     * @return NaResponse 返回 Base64 PDF
-     *
-     * @throws Exception 转换失败异常
-     */
-    public static NaResponse wordToPdf(NaWordToPdfDTO dto) throws Exception {
-        // 1. 拼写临时 Word 路径
-        String wordPath = buildTempPath(dto, NaIDUtil.getRandomNo(7), ".docx");
-
-        // 2. 写入 Base64 到 Word 文件
-        writeBase64ToFile(dto.getBase64(), wordPath);
-
-        // 3. 拼写 PDF 输出路径
-        String pdfPath = wordPath.replace(".docx", ".pdf");
-
-        // 4. 确保输出目录存在
+    public static NaResponse wordToPdf(NaWordToPdfDTO dto) throws Exception{
+        if(dto == null || !dto.isPdfFile() || StringUtils.isEmpty(dto.getBase64())){
+            return NaResponse.builder()
+                    .code(-1)
+                    .msg("参数错误")
+                    .build();
+        }
+        String pdfPath = dto.getAbsPath();
+        // 确保输出目录存在
         ensureParentDirectoryExists(pdfPath);
 
-        // 5. 调用 LibreOffice 转换
-        executeLibreOfficeConvert(wordPath, pdfPath);
+        // 拼写 word 临时输出路径
+        String wordPath = pdfPath.replace(".pdf", ".docx");
 
-        // 6. 将 PDF 转 Base64
-        String pdfBase64 = pdfToBase64(pdfPath);
+        // 写入 Base64 到 Word 临时文件
+        writeBase64ToFile(dto.getBase64(), wordPath);
+
+        // 调用 LibreOffice 转换
+        executeLibreOfficeConvert(wordPath, pdfPath,dto.getLibreoffice());
+
+        // 将 PDF 转 Base64
+        String pdfBase64 = fileToBase64(pdfPath);
 
         // 7. 删除临时文件
         deleteFile(wordPath);
         deleteFile(pdfPath);
 
-        // 8. 返回结果
-        NaResponse response = new NaResponse();
-        response.setCode(0);
-        response.setMsg("转换成功");
-        response.setData(pdfBase64);
-        return response;
+        return NaResponse.builder()
+                .code(0)
+                .msg("转换成功")
+                .data(pdfBase64)
+                .build();
     }
 
-    // ========================= 辅助方法 =========================
-
-    /** 拼接临时文件路径 */
-    private static String buildTempPath(NaWordToPdfDTO dto, String fileName, String extension) {
-        String folder = dto.getAbsPath();
-        if(StringUtils.isNotEmpty(folder)){
-            return String.format("%s/%s%s", folder, fileName, extension);
-        }
-        folder = "tmp";
-        return String.format("%s/%s/%s%s", NaCommonUtil.isWindows() ? WIN_TEMP_DIR : LINUX_TEMP_DIR, folder, fileName, extension);
-    }
 
     /** 写 Base64 到文件 */
-    private static void writeBase64ToFile(String base64, String filePath) throws IOException {
+    public static void writeBase64ToFile(String base64, String filePath) throws IOException {
         byte[] bytes = Base64.getDecoder().decode(base64);
         Path path = Paths.get(filePath);
         ensureParentDirectoryExists(filePath);
@@ -86,7 +63,7 @@ public class NaWordToPdfUtil {
     }
 
     /** 确保父目录存在 */
-    private static void ensureParentDirectoryExists(String filePath) {
+    public static void ensureParentDirectoryExists(String filePath) {
         File parent = new File(filePath).getParentFile();
         if (!parent.exists()) {
             boolean created = parent.mkdirs();
@@ -97,12 +74,12 @@ public class NaWordToPdfUtil {
     }
 
     /** 调用 LibreOffice 将 Word 转 PDF */
-    private static void executeLibreOfficeConvert(String wordPath, String pdfPath) throws IOException, InterruptedException {
+    public static void executeLibreOfficeConvert(String wordPath, String pdfPath,String libreoffice) throws IOException, InterruptedException {
         File pdfFile = new File(pdfPath);
         File parent = pdfFile.getParentFile();
 
         ProcessBuilder pb = new ProcessBuilder(
-                NaCommonUtil.isWindows() ? WIN_LIBREOFFICE_PATH : LINUX_LIBREOFFICE_PATH,
+                libreoffice,
                 "--headless",
                 "--convert-to", "pdf",
                 "--outdir", parent.getAbsolutePath(),
@@ -126,15 +103,15 @@ public class NaWordToPdfUtil {
         }
     }
 
-    /** PDF → Base64 */
-    private static String pdfToBase64(String pdfPath) throws IOException {
+    /** 文件 → Base64 */
+    public static String fileToBase64(String pdfPath) throws IOException {
         Path path = Paths.get(pdfPath);
         byte[] bytes = Files.readAllBytes(path);
         return Base64.getEncoder().encodeToString(bytes);
     }
 
     /** 删除文件（存在则删除） */
-    private static void deleteFile(String path) {
+    public static void deleteFile(String path) {
         File file = new File(path);
         if (file.exists()) {
             boolean success = file.delete();
@@ -142,5 +119,22 @@ public class NaWordToPdfUtil {
                 System.err.println("删除文件失败: " + path);
             }
         }
+    }
+
+    /**
+     * base64 转 InputStream（智能去掉前缀，无前缀则不解）
+     */
+    public static InputStream base64ToInputStream(String base64) {
+        if (base64 == null) {
+            return null;
+        }
+        // 只有包含逗号时，才去掉前缀 data:...base64,
+        if (base64.contains(",")) {
+            base64 = base64.split(",")[1];
+        }
+        // 解码
+        byte[] bytes = Base64.getDecoder().decode(base64);
+        // 返回流
+        return new ByteArrayInputStream(bytes);
     }
 }
